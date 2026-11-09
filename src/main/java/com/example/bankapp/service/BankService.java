@@ -56,8 +56,7 @@ public class BankService {
     }
 
     public List<BankTransaction> getLargeTransfers(BigDecimal minimum) {
-        return transactionRepository.findByStatusAndAmountGreaterThanOrderByCreatedAtDesc(
-                TransactionStatus.SUCCESS, minimum);
+        return transactionRepository.findSuccessfulTransfersAbove(minimum);
     }
 
     public Customer getCustomer(String accountNumber) {
@@ -66,7 +65,7 @@ public class BankService {
     }
 
     public long countCustomers() {
-        return customerRepository.count() - (customerRepository.existsByAccountNumber(BANK_ACCOUNT) ? 1 : 0);
+        return customerRepository.count() - (customerRepository.findByAccountNumber(BANK_ACCOUNT).isPresent() ? 1 : 0);
     }
 
     public BigDecimal getTotalBalance() {
@@ -81,16 +80,17 @@ public class BankService {
     }
 
     public BigDecimal getTotalSent(String accountNumber) {
-        BigDecimal total = transactionRepository.totalSentByAccount(accountNumber, TransactionStatus.SUCCESS);
+        BigDecimal total = transactionRepository.totalSentByAccount(accountNumber);
         return total == null ? BigDecimal.ZERO : total;
     }
 
     @Transactional
     public void addCustomer(Customer customer) {
-        if (customerRepository.existsByAccountNumber(customer.getAccountNumber())) {
+        if (customerRepository.findByAccountNumber(customer.getAccountNumber()).isPresent()) {
             throw new BankException("Account number is already in use");
         }
-        if (customerRepository.existsByEmail(customer.getEmail())) {
+        if (customerRepository.findAll().stream()
+            .anyMatch(existing -> existing.getEmail().equalsIgnoreCase(customer.getEmail()))) {
             throw new BankException("Email address is already in use");
         }
         customerRepository.save(customer);
@@ -103,22 +103,24 @@ public class BankService {
             throw new BankException("Sender and receiver accounts must be different");
         }
 
-        Customer sender = lockCustomer(fromAccount);
-        Customer receiver = lockCustomer(toAccount);
         BigDecimal fee = amount.multiply(TRANSFER_FEE_RATE).setScale(2, RoundingMode.HALF_UP);
-        BigDecimal debit = amount.add(fee);
-        if (sender.getBalance().compareTo(debit) < 0) {
+        int debited = customerRepository.debit(fromAccount, amount.add(fee));
+        if (debited == 0) {
+            if (customerRepository.findByAccountNumber(fromAccount).isEmpty()) {
+                throw new AccountNotFoundException(fromAccount);
+            }
             throw new InsufficientBalanceException(fromAccount);
         }
 
-        sender.setBalance(sender.getBalance().subtract(debit));
+        if (customerRepository.credit(toAccount, amount) == 0) {
+            throw new AccountNotFoundException(toAccount);
+        }
+        if (customerRepository.credit(BANK_ACCOUNT, fee) == 0) {
+            throw new AccountNotFoundException(BANK_ACCOUNT);
+        }
         if (simulateFailure) {
             throw new BankException("Simulated failure; transfer rolled back");
         }
-
-        receiver.setBalance(receiver.getBalance().add(amount));
-        Customer bank = lockCustomer(BANK_ACCOUNT);
-        bank.setBalance(bank.getBalance().add(fee));
         transactionRepository.save(new BankTransaction(fromAccount, toAccount, amount,
                 TransactionStatus.SUCCESS, "Transfer completed (1% fee: LKR " + fee + ")"));
     }
@@ -126,8 +128,9 @@ public class BankService {
     @Transactional
     public void deposit(String accountNumber, BigDecimal amount) {
         validateAmount(amount);
-        Customer customer = lockCustomer(accountNumber);
-        customer.setBalance(customer.getBalance().add(amount));
+        if (customerRepository.credit(accountNumber, amount) == 0) {
+            throw new AccountNotFoundException(accountNumber);
+        }
         transactionRepository.save(new BankTransaction(null, accountNumber, amount,
                 TransactionStatus.SUCCESS, "Cash deposit"));
     }
@@ -135,18 +138,14 @@ public class BankService {
     @Transactional
     public void withdraw(String accountNumber, BigDecimal amount) {
         validateAmount(amount);
-        Customer customer = lockCustomer(accountNumber);
-        if (customer.getBalance().compareTo(amount) < 0) {
+        if (customerRepository.debit(accountNumber, amount) == 0) {
+            if (customerRepository.findByAccountNumber(accountNumber).isEmpty()) {
+                throw new AccountNotFoundException(accountNumber);
+            }
             throw new InsufficientBalanceException(accountNumber);
         }
-        customer.setBalance(customer.getBalance().subtract(amount));
         transactionRepository.save(new BankTransaction(accountNumber, null, amount,
                 TransactionStatus.SUCCESS, "Cash withdrawal"));
-    }
-
-    private Customer lockCustomer(String accountNumber) {
-        return customerRepository.findWithLockingByAccountNumber(accountNumber)
-                .orElseThrow(() -> new AccountNotFoundException(accountNumber));
     }
 
     private void validateAmount(BigDecimal amount) {

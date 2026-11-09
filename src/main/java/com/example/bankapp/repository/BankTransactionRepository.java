@@ -17,8 +17,16 @@ public interface BankTransactionRepository
     List<BankTransaction> findByFromAccountOrToAccountOrderByCreatedAtDesc(
             String fromAccount, String toAccount);
 
-    List<BankTransaction> findByStatusAndAmountGreaterThanOrderByCreatedAtDesc(
-            TransactionStatus status, BigDecimal amount);
+    @Query("""
+            select t
+            from BankTransaction t
+            where t.status = com.example.bankapp.model.TransactionStatus.SUCCESS
+              and t.fromAccount is not null
+              and t.toAccount is not null
+              and t.amount > :minimum
+            order by t.createdAt desc
+            """)
+    List<BankTransaction> findSuccessfulTransfersAbove(@Param("minimum") BigDecimal minimum);
 
     long countByStatus(TransactionStatus status);
 
@@ -26,8 +34,8 @@ public interface BankTransactionRepository
             select coalesce(sum(t.amount), 0)
             from BankTransaction t
             where t.fromAccount = :accountNumber
-              and t.status = :status
+              and t.status = com.example.bankapp.model.TransactionStatus.SUCCESS
+              and t.toAccount is not null
             """)
-    BigDecimal totalSentByAccount(@Param("accountNumber") String accountNumber,
-                                  @Param("status") TransactionStatus status);
+    BigDecimal totalSentByAccount(@Param("accountNumber") String accountNumber);
 }

@@ -20,15 +20,17 @@ public class DataLoader implements CommandLineRunner {
 
     @Override
     public void run(String... args) {
-        if (customerRepository.count() != 0) {
-            return;
+        if (customerRepository.count() == 0) {
+            customerRepository.saveAll(List.of(
+                    new Customer("Nuwan Jayasinghe", "nuwan@example.com", "100001", new BigDecimal("50000.00")),
+                    new Customer("Amaya Perera", "amaya@example.com", "100002", new BigDecimal("25000.00")),
+                    new Customer("Kavindu Silva", "kavindu@example.com", "100003", new BigDecimal("10000.00"))
+            ));
         }
 
-        customerRepository.saveAll(List.of(
-                new Customer("Nuwan Jayasinghe", "nuwan@example.com", "100001", new BigDecimal("50000.00")),
-                new Customer("Amaya Perera", "amaya@example.com", "100002", new BigDecimal("25000.00")),
-                new Customer("Kavindu Silva", "kavindu@example.com", "100003", new BigDecimal("10000.00")),
-                new Customer("Bank Fees", "bank@example.com", "999999", BigDecimal.ZERO)
-        ));
+        if (customerRepository.findByAccountNumber("999999").isEmpty()) {
+            customerRepository.save(new Customer(
+                    "Bank Fees", "bank@example.com", "999999", BigDecimal.ZERO));
+        }
     }
 }

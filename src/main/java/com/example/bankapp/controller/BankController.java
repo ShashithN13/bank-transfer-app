@@ -6,6 +6,8 @@ import com.example.bankapp.model.Customer;
 import com.example.bankapp.model.TransactionStatus;
 import com.example.bankapp.service.BankService;
 import jakarta.validation.Valid;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.validation.BindingResult;
@@ -13,10 +15,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 import java.math.BigDecimal;
+import java.util.Map;
 
 @Controller
 public class BankController {
@@ -69,6 +74,24 @@ public class BankController {
         return "redirect:/";
     }
 
+    @PostMapping(value = "/transfer", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    public ResponseEntity<Map<String, String>> transferJson(@Valid @RequestBody TransferRequest request) {
+        try {
+            bankService.transfer(request.getFromAccount(), request.getToAccount(),
+                    request.getAmount(), request.isSimulateFailure());
+            return ResponseEntity.ok(Map.of("status", "success", "message", "Transfer completed successfully"));
+        } catch (BankException exception) {
+            return ResponseEntity.badRequest().body(Map.of("status", "error", "message", exception.getMessage()));
+        }
+    }
+
+    @PostMapping(value = "/api/transfer", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    public ResponseEntity<Map<String, String>> transferApiJson(@Valid @RequestBody TransferRequest request) {
+        return transferJson(request);
+    }
+
     @GetMapping("/deposit")
     public String depositPage(Model model) {
         model.addAttribute("customers", bankService.getCustomers(null));
@@ -87,6 +110,19 @@ public class BankController {
         return "redirect:/deposit";
     }
 
+    @PostMapping(value = "/deposit", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    public ResponseEntity<Map<String, String>> depositJson(@RequestBody Map<String, Object> payload) {
+        try {
+            String accountNumber = String.valueOf(payload.get("accountNumber"));
+            BigDecimal amount = new BigDecimal(String.valueOf(payload.get("amount")));
+            bankService.deposit(accountNumber, amount);
+            return ResponseEntity.ok(Map.of("status", "success", "message", "Deposit completed successfully"));
+        } catch (Exception exception) {
+            return ResponseEntity.badRequest().body(Map.of("status", "error", "message", exception.getMessage()));
+        }
+    }
+
     @GetMapping("/withdraw")
     public String withdrawPage(Model model) {
         model.addAttribute("customers", bankService.getCustomers(null));
@@ -103,6 +139,19 @@ public class BankController {
             redirectAttributes.addFlashAttribute("error", exception.getMessage());
         }
         return "redirect:/withdraw";
+    }
+
+    @PostMapping(value = "/withdraw", consumes = MediaType.APPLICATION_JSON_VALUE)
+    @ResponseBody
+    public ResponseEntity<Map<String, String>> withdrawJson(@RequestBody Map<String, Object> payload) {
+        try {
+            String accountNumber = String.valueOf(payload.get("accountNumber"));
+            BigDecimal amount = new BigDecimal(String.valueOf(payload.get("amount")));
+            bankService.withdraw(accountNumber, amount);
+            return ResponseEntity.ok(Map.of("status", "success", "message", "Withdrawal completed successfully"));
+        } catch (Exception exception) {
+            return ResponseEntity.badRequest().body(Map.of("status", "error", "message", exception.getMessage()));
+        }
     }
 
     @GetMapping("/accounts/{accountNumber}/history")

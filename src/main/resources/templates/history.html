@@ -19,7 +19,7 @@
     <p>Current balance:
       <strong>LKR <span th:text="${#numbers.formatDecimal(customer.balance, 1, 'COMMA', 2, 'POINT')}"></span></strong>
     </p>
-    <p>Total sent (successful transfers, including fees):
+    <p>Total sent (successful transfers):
       <strong>LKR <span th:text="${#numbers.formatDecimal(totalSent, 1, 'COMMA', 2, 'POINT')}"></span></strong>
     </p>
   </section>
